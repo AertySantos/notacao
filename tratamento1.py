@@ -6,25 +6,53 @@ class Trt1:
     def __init__(self):
         pass
 
+    def colocar_em_pagina(self, input_img, output_path, page_size=1536, bg_color=255):
+        """
+        Centraliza a imagem em uma página quadrada (canvas).
+        Não distorce a imagem.
+        """
+        img = input_img
+
+        h, w = img.shape
+
+        # cria a "página"
+        pagina = np.full((page_size, page_size), bg_color, dtype=np.uint8)
+
+        # calcula posição para centralizar
+        y_offset = (page_size - h) // 2
+        x_offset = (page_size - w) // 2
+
+        # cola a partitura na página
+        pagina[y_offset:y_offset + h, x_offset:x_offset + w] = img
+
+        cv2.imwrite(output_path, pagina)
+
+        return pagina
+
     def preprocess_partitura(self, input_path, output_path=None):
 
+        # ------------------ LOAD ------------------
         img = cv2.imread(input_path, cv2.IMREAD_GRAYSCALE)
         if img is None:
             raise FileNotFoundError(input_path)
 
-        # 1 — Remover ruído do papel preservando bordas
+
+        # ------------------ DENOISE (preserva bordas) ------------------
         clean = cv2.bilateralFilter(img, 11, 50, 50)
 
-        # 2 — Normalização de iluminação
+        # ------------------ ILUMINAÇÃO / FUNDO ------------------
         background = cv2.medianBlur(clean, 51)
-        norm = cv2.divide(clean.astype(np.float32), background.astype(np.float32)+1, scale=255)
+        norm = cv2.divide(
+            clean.astype(np.float32),
+            background.astype(np.float32) + 1,
+            scale=255
+        )
         norm = np.clip(norm, 0, 255).astype(np.uint8)
 
-        # Suavização leve
-        smooth = cv2.GaussianBlur(norm, (3,3), 0)
+        # ------------------ SUAVIZAÇÃO LEVE ------------------
+        smooth = cv2.GaussianBlur(norm, (1, 1), 0)
 
-        # ----------- THRESHOLD CERTO PARA PARTITURA -----------
-        # Mantém linhas finas intactas
+        # ------------------ BINARIZAÇÃO ------------------
         _, binarizada = cv2.threshold(
             smooth,
             0,
@@ -32,57 +60,52 @@ class Trt1:
             cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
         )
 
-        # ⚠️ A PARTIR DAQUI, NADA DE INVERTER IMAGEM ⚠️
-        # Se inverter aqui, destrói o fundo branco.
+        # ------------------ LIMPEZA DE RUÍDO FINO ------------------
+        binarizada = cv2.morphologyEx(
+            binarizada,
+            cv2.MORPH_OPEN,
+            np.ones((2, 2), np.uint8)
+        )
 
-        # Opcional: remover ruído pequeno
-        binarizada = cv2.morphologyEx(binarizada, cv2.MORPH_OPEN, np.ones((2,2), np.uint8))
+        # ==========================================================
+        # AJUSTE FINO DE ESPESSURA (YOLO-FRIENDLY)
+        # ==========================================================
 
-        # ----------- REFORÇAR LINHAS -----------
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (60, 1))
-        linhas = cv2.morphologyEx(binarizada, cv2.MORPH_OPEN, kernel)
+        # Começa da binarizada
+        simbolos_reforcados = binarizada.copy()
 
-        final = binarizada.copy()
-        #final[linhas > 0] = 0  # pinta as linhas de preto sólido
-    #
-        # Agora sim faz a inversão final
-        final = 255 - final
-        if output_path:
-            cv2.imwrite(output_path, final)
+        # ------------------ AFINAR LEVEMENTE ------------------
+        kernel_afinar = cv2.getStructuringElement(
+            cv2.MORPH_RECT, (1, 2)
+        )
+        simbolos_reforcados = cv2.erode(
+            simbolos_reforcados,
+            kernel_afinar,
+            iterations=1
+        )
+
+        # ------------------ SUAVIZAR SERRILHADO ------------------
+        simbolos_reforcados = cv2.GaussianBlur(
+            simbolos_reforcados,
+            (3, 3),
+            0.5
+        )
+
+        # ------------------ NORMALIZAR PARA YOLO ------------------
+        final = 255 - simbolos_reforcados
+        self.colocar_em_pagina(final, output_path)
+        #if output_path:
+            #cv2.imwrite(output_path, final)
 
         return final
 
 
-    def melhorar_linhas(self, img):
-        # img = fundo branco, linhas pretas (0)
-
-        # 1 — Detectar apenas linhas
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (60, 1))
-        linhas = cv2.morphologyEx(img, cv2.MORPH_OPEN, kernel)
-
-        # 2 — Afinar
-        try:
-            thin = cv2.ximgproc.thinning(linhas)
-        except:
-            thin = cv2.erode(linhas, np.ones((3,1), np.uint8), iterations=1)
-
-        # 3 — Suavizar serrilhas
-        suaves = cv2.GaussianBlur(thin, (5,3), 0)
-
-        # 4 — Repor na imagem original (branco=255, preto=0)
-        mask = linhas > 0
-        result = img.copy()
-        result[mask] = suaves[mask]
-        #result[mask] = 0
-        return result
-
-
-
 # Exemplo
 if __name__ == "__main__":
-    preprocess_partitura(
+    tr = Trt1()
+    tr.preprocess_partitura(
         "paginas_pdf/pagina_1.png",
-        "partitura_fundo_branco.png"
+        "tratamento/partitura_teste_1.png"
     )
 
 

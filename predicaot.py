@@ -2,13 +2,14 @@ from ultralytics import YOLO
 import torch
 import cv2
 import os
+#os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 import random
 import glob
 
 
 class Predicao:
-    def simbolos_detectados(self, pasta):
-        self.pasta = pasta
+    def simbolos_detectados(self, imgin):
+        image_path = imgin
 
         # Lista final para retornar (mesmo formato do código anterior)
         simbolos = []
@@ -16,9 +17,9 @@ class Predicao:
         # -------------------------------------------------------------
         # 1) Checa GPU e carrega modelo
         # -------------------------------------------------------------
-        assert torch.cuda.device_count() > 1, "GPU 1 não disponível!"
-        device = "cuda:1"
-
+        #assert torch.cuda.device_count() > 1, "GPU 1 não disponível!"
+        #device = "cuda:1"
+        device = "cpu"
         model = YOLO("runs11/detect/yolov8x_15367/weights/best.pt")
         model.to(device)
 
@@ -47,20 +48,20 @@ class Predicao:
         # -------------------------------------------------------------
         # 3) Lista de imagens para processar
         # -------------------------------------------------------------
-        image_paths = []
-        for ext in ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff']:
-            image_paths.extend(glob.glob(os.path.join(self.pasta, ext)))
+        #image_paths = []
+        #for ext in ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff']:
+            #image_paths.extend(glob.glob(os.path.join(self.pasta, ext)))
 
         # -------------------------------------------------------------
         # 4) Rodar inferência
         # -------------------------------------------------------------
-        results = model.predict(image_paths, device=device)
+        results = model.predict(image_path, device=device, imgsz=1536)
 
         # Pasta de saída para imagens rotuladas
         os.makedirs("imagens_com_rotulos", exist_ok=True)
 
         # Arquivo TXT geral
-        txt_saida = "deteccoes_completastt.txt"
+        txt_saida = "deteccoes_completa.txt"
         f = open(txt_saida, "w")
 
         # -------------------------------------------------------------
